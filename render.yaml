@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cityboymandate
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn cityboymandate.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - { key: PYTHON_VERSION, value: "3.12.3" }
+      - { key: DEMO_MODE, value: "1" }
+      - { key: ENABLE_TIMER, value: "1" }
+      - { key: SCAN_INTERVAL_SECONDS, value: "3600" }
+      - { key: X_KEYWORD_SEARCH, value: "0" }
+      - { key: X_RESULTS_PER_QUERY, value: "10" }
+      - { key: JWT_SECRET, generateValue: true }
+      - { key: CRON_SECRET, generateValue: true }
+      - { key: BOOTSTRAP_ADMIN_PASSWORD, sync: false }
