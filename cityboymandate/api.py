@@ -5,6 +5,7 @@ from dataclasses import asdict
 import hmac
 import os
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
@@ -190,6 +191,19 @@ def create_app(svc: Service) -> FastAPI:
         return svc.audit.events()
 
     dash = os.path.join(os.path.dirname(__file__), "..", "dashboard")
-    if os.path.isdir(dash):
+    has_dash = os.path.isdir(dash)
+    if has_dash:
         app.mount("/dashboard", StaticFiles(directory=dash, html=True), name="dashboard")
+    else:
+        @app.get("/dashboard/")
+        def no_dashboard():
+            raise HTTPException(404, "The server is running but the 'dashboard' folder was not uploaded to GitHub next to 'cityboymandate'. Upload it and Render will redeploy.")
+
+    @app.get("/")
+    def root():
+        """The plain address: send people to the dashboard instead of a bare 404."""
+        if has_dash:
+            return RedirectResponse("/dashboard/")
+        return {"status": "api running", "dashboard": "NOT DEPLOYED: upload the dashboard folder", "health": "/health", "api_docs": "/docs"}
+
     return app
