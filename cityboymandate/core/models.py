@@ -81,6 +81,7 @@ class SocialPost:
     lang: str = "en"
     parent_id: str | None = None
     quoted_id: str | None = None
+    conversation_id: str | None = None
     limitations: list[str] = field(default_factory=list)
     platform: str = "x"          # x | facebook | instagram
     own_asset: bool = False     # True only for comments on Pages/accounts we operate

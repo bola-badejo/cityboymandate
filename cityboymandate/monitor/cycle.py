@@ -126,6 +126,11 @@ class MonitorCycle:
             rep.skipped = "system halted"
             self.last = rep
             return rep
+        meter = getattr(self.svc, "meter", None)
+        if meter is not None and meter.exceeded():
+            rep.skipped = f"daily X spending cap reached (~${meter.spent_today()} of ${meter.cap}); resumes tomorrow"
+            self.last = rep
+            return rep
         tm = getattr(self.svc, "token_manager", None)
         if tm is not None and tm.status() != "not_authorized":
             try:
@@ -175,7 +180,7 @@ class MonitorCycle:
                 rep.by_tone[label] = rep.by_tone.get(label, 0) + 1
             except Exception as e:
                 rep.errors.append(f"investigate {p.platform}:{p.platform_post_id}: {e!r}")
-        rep.est_cost_usd = round(rep.fetched * self.cost, 4)
+        rep.est_cost_usd = round(meter.spent_today(), 4) if meter is not None else round(rep.fetched * self.cost, 4)
         self.svc.extra["seen"] = [list(k) for k in self.seen][-5000:]
         self.svc.extra["cursors"] = {type(d).__name__: d.cursor for d in self.ds if hasattr(d, "cursor")}
         self.svc.audit.record(SYSTEM.id, "monitor.cycle", "monitor", "cycle", rep.__dict__)

@@ -44,6 +44,9 @@ class MockX:
     def get_post(self, post_id):
         return self.posts.get(post_id)   # None models deleted/inaccessible posts
 
+    def conversation(self, conversation_id, max_results=10):
+        return [p for p in self.posts.values() if p.conversation_id == conversation_id][:max_results]
+
 
 class MockSearch:
     """corpus: list of (keywords, RetrievedDoc). A doc is returned if any keyword is in the claim."""

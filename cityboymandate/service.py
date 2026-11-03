@@ -60,6 +60,7 @@ class Service:
         self.pubs: list[dict] = []
         self.sources = SourcePolicy(audit)
         registry.policy = self.sources
+        self.meter = None                     # UsageMeter (X spend estimate)
         self.token_manager = None             # TokenManager when X OAuth refresh is configured
         self.library = None                   # DocumentLibrary, set by main
         self.runner = None                    # CycleRunner, set by main

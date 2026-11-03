@@ -79,7 +79,8 @@ def create_app(svc: Service) -> FastAPI:
     def health():
         return {"status": "ok", "publishing_enabled": svc.config.cfg.publishing_enabled,
                 "halted": svc.config.cfg.halted, "audit_chain_intact": svc.audit.verify(), "monitor": svc.runner is not None,
-                "x_auth": svc.token_manager.status() if svc.token_manager else "static_or_unconfigured"}
+                "x_auth": svc.token_manager.status() if svc.token_manager else "static_or_unconfigured",
+                "x_usage": svc.meter.summary() if svc.meter else None}
 
     @app.post("/auth/login")
     def login(b: Login):

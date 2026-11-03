@@ -41,6 +41,7 @@ tr[data-open]{cursor:pointer}.clip{max-width:34ch;overflow:hidden;text-overflow:
       <span id="modeBadge" class="badge text-bg-warning"></span>
       <span id="draftBadge" class="badge text-bg-secondary"></span>
       <span id="authBadge" class="badge d-none" role="status"></span>
+      <span id="spendBadge" class="badge text-bg-light border d-none" title="Estimate. The X console is the source of truth."></span>
       <span id="who" class="small text-body-secondary"></span>
       <div class="ms-auto d-flex gap-2">
         <button class="btn btn-sm btn-outline-primary d-none" id="scan">Scan now</button>
@@ -190,8 +191,8 @@ async function openDetail(id){const inv=S.invs.find(i=>i.id===id);if(!inv)return
  const warn=[...p.limitations.map(x=>`Limitation: ${x}.`),...inv.notes,...(inv.safety_flags.length?[`Embedded instructions were flagged (${inv.safety_flags.join(', ')}). They were treated as text and did not affect any verdict.`]:[])].map(w=>`<div class="alert alert-warning py-2 small">${esc(w)}</div>`).join('');
  $('#dTitle').textContent=`${(PLAT[p.platform]||{name:p.platform}).name} post by ${p.author_handle}`;
  $('#dBody').innerHTML=`<p class="mb-1">${esc(p.text)}</p><p class="small"><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Open original post</a> <span class="text-body-secondary">| ${esc(lab(inv.stage))} | ${p.own_asset?'comment on an account we operate':'third-party post'}</span></p>${warn}
- <ul class="nav nav-tabs mb-3" role="tablist"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t1">Claims</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t2">Evidence</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t3">Reply</button></li></ul>
- <div class="tab-content"><div class="tab-pane fade show active" id="t1">${claims}</div><div class="tab-pane fade" id="t2">${ev}</div><div class="tab-pane fade" id="t3">${drafts}</div></div>`;
+ <ul class="nav nav-tabs mb-3" role="tablist"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t1">Claims</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t2">Evidence</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t3">Reply</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t4">Conversation</button></li></ul>
+ <div class="tab-content"><div class="tab-pane fade show active" id="t1">${claims}</div><div class="tab-pane fade" id="t2">${ev}</div><div class="tab-pane fade" id="t3">${drafts}</div><div class="tab-pane fade" id="t4">${(inv.thread||[]).map(t=>`<div class="panel p-2 mb-2 small"><strong>${esc(t.author_handle)}</strong><div>${esc(t.text)}</div></div>`).join('')||'<p class="text-body-secondary">No other posts in this conversation were retrieved.</p>'}${(inv.notes||[]).map(n=>`<div class="alert alert-secondary py-2 small">${esc(n)}</div>`).join('')}</div></div>`;
  $('#dBody').dataset.inv=id;bootstrap.Offcanvas.getOrCreateInstance($('#detail')).show()}
 async function act(btn){const id=$('#dBody').dataset.inv,inv=S.invs.find(i=>i.id===id);
  if(btn.dataset.act){const d=btn.dataset.d,dec=btn.dataset.act;try{if(S.mode==='live')await api(`/drafts/${d}/review`,{method:'POST',body:JSON.stringify({decision:dec})});else{(S.reviews[d]??=[]).push({by:'you',decision:dec});logD('human_review',d,{decision:dec})}toast(`${lab(dec)} recorded`,'success');await openDetail(id)}catch(e){toast(e.message,'danger')}}
@@ -204,6 +205,7 @@ function route(){S.view=(location.hash||'#overview').slice(1);if(!VIEWS[S.view])
  $('#nav').innerHTML=nav;$('#nav2').innerHTML=nav;$('#modeBadge').textContent=S.mode==='demo'?'Demo data (fictional)':'Live API';$('#modeBadge').className='badge text-bg-'+(S.mode==='demo'?'warning':'success');
  const c=S.cfg.config;$('#draftBadge').textContent=c.halted?'Halted':c.publishing_enabled?'Publishing enabled':'Draft-only mode';$('#draftBadge').className='badge text-bg-'+(c.halted?'danger':c.publishing_enabled?'primary':'secondary');$('#who').textContent=S.mode==='demo'?'Demo reviewer':'Role: '+S.role;
  $('#view').innerHTML=VIEWS[S.view]();const xa=S.health&&S.health.x_auth,ab=$('#authBadge');const am={needs_reauth:['danger','X sign-in expired: re-authorize'],degraded:['warning','X sign-in refresh failing, retrying'],not_authorized:['secondary','X posting not authorized yet']}[xa];ab.className='badge '+(am?'text-bg-'+am[0]:'d-none');ab.textContent=am?am[1]:'';
+ const us=S.health&&S.health.x_usage,sb=$('#spendBadge');sb.classList.toggle('d-none',!us);if(us){sb.textContent=`X spend today ~$${us.spent_today_usd.toFixed(2)} of $${us.cap_usd}`;sb.className='badge border '+(us.spent_today_usd>=us.cap_usd*0.8?'text-bg-warning':'text-bg-light')}
  $('#scan').classList.toggle('d-none',S.mode!=='live'||!canReview());
  $('#stop').disabled=!canReview()}
 function showLogin(){bootstrap.Modal.getOrCreateInstance($('#login')).show()}

@@ -64,8 +64,16 @@ def check(env, today: dt.date | None = None) -> list[tuple[str, str, str]]:
                 add("FAIL", "X sign-in", "ENABLE_PUBLISHER=1 but no X posting credentials")
     else:
         add("INFO", "publishing", "OFF: drafts only. Staff copy approved drafts and post by hand")
+    if x_read:
+        add("PASS" if g("X_DAILY_BUDGET_USD") else "WARN", "X spending cap", f"daily cap ${g('X_DAILY_BUDGET_USD')}" if g("X_DAILY_BUDGET_USD") else "X_DAILY_BUDGET_USD unset: defaults to $5 a day. ALSO set a spending limit in the X console")
+    if g("RESPONDER") == "llm":
+        add("PASS" if g("ANTHROPIC_API_KEY") else "FAIL", "natural replies", "model writer on, every reply validated" if g("ANTHROPIC_API_KEY") else "RESPONDER=llm needs ANTHROPIC_API_KEY")
+    if g("WEB_EVIDENCE") == "1":
+        ok = bool(g("BRAVE_API_KEY") and g("EVIDENCE_DOMAINS"))
+        add("PASS" if ok else "FAIL", "live official-site evidence", "enabled" if ok else "WEB_EVIDENCE=1 needs BRAVE_API_KEY and EVIDENCE_DOMAINS")
     if g("ANTHROPIC_API_KEY"):
         add("WARN", "language-model judge", "enabled but never trialled on live claims: read 50 results before relying on it")
+    add("INFO", "audio/video", "not analysed: clips and voice notes get a 'could not confirm' answer (no transcription provider yet)")
     add("INFO", "languages", "only English is evaluated; other languages are held for a fluent reviewer (docs/LANGUAGES.md)")
     return r
 

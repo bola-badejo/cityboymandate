@@ -64,7 +64,7 @@ _ORDER = ["FALSE", "MOSTLY_FALSE", "MISLEADING", "OUTDATED", "DISPUTED", "SUPPOR
 
 
 def edit_draft(inv_id: str, claim: ExtractedClaim, v: ClaimVerdict, reg: EvidenceRegistry, disclosure: str = "",
-               invoked: bool = False, lang: str = "en") -> DraftResponse | None:
+               invoked: bool = False, lang: str = "en", writer=None) -> DraftResponse | None:
     """Unrequested posts only ever get a draft for correctable verdicts. When someone ASKED (a mention), the
     answer is honest whatever the verdict: confirmed, wrong, disputed, or not verifiable. Never repeats the
     claim and never mentions the author."""
@@ -81,6 +81,10 @@ def edit_draft(inv_id: str, claim: ExtractedClaim, v: ClaimVerdict, reg: Evidenc
         return DraftResponse(inv_id, claim.id, t(lang, "unverified") + d, [])
     p = sorted(ok, key=lambda x: not reg.sources[x.source_id].primary)[0]   # prefer primary documents
     src = reg.sources[p.source_id]
+    if writer is not None and lang == "en":                     # a natural reply, only if it passes every check; otherwise the plain template
+        core = writer.write(claim.text, v.verdict, p.text, src.publisher, src.url, disclosure)
+        if core:
+            return DraftResponse(inv_id, claim.id, f"{core} Source: {src.url}{d}", [src.url])
     head = f'{t(lang, _KEY[v.verdict])} {src.publisher} {t(lang, "states")} "'
     tail = f'" {t(lang, "source")} {src.url}' + d
     room = MAX_LEN - len(head) - len(tail)

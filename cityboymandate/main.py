@@ -9,6 +9,9 @@ from cityboymandate.core.evidence import EvidenceRegistry
 from cityboymandate.core.gate import ConfigStore
 from cityboymandate.evidence.judges import CompositeJudge, LLMJudge, RuleJudge, anthropic_complete
 from cityboymandate.evidence.library import DocumentLibrary, LibrarySearch
+from cityboymandate.evidence.web import CompositeSearch, OfficialWebSearch, brave_search, parse_domains, safe_fetch
+from cityboymandate.pipeline.writer import VOICE_DEFAULT, LLMWriter
+from cityboymandate.platforms.usage import UsageMeter
 from cityboymandate.monitor.cycle import CycleRunner, MetaOwnCommentsDiscoverer, MonitorCycle, StaticDiscoverer, XDiscoverer, InstagramHashtagDiscoverer, XMentionDiscoverer
 from cityboymandate.monitor.keywords import KeywordMatcher
 from cityboymandate.pipeline.orchestrator import Orchestrator
@@ -25,22 +28,34 @@ audit, reg = AuditLog(env("AUDIT_DB", ":memory:")), EvidenceRegistry()
 cfg = ConfigStore(audit)
 matcher = KeywordMatcher({"demo": ["commission"]}) if demo else KeywordMatcher()   # demo posts are fictional and never mention real names
 providers, discoverers, library = {}, [], None
+meter = UsageMeter(float(env("X_DAILY_BUDGET_USD", "5")), {k: float(env(e)) for k, e in (("read", "X_COST_READ"), ("user_read", "X_COST_USER_READ"), ("post", "X_COST_POST"), ("post_url", "X_COST_POST_URL")) if env(e)})
+writer = None
+if env("RESPONDER") == "llm" and env("ANTHROPIC_API_KEY"):        # natural replies, validated; default is the plain template
+    writer = LLMWriter(anthropic_complete(urllib_post, env("ANTHROPIC_API_KEY"), env("LLM_MODEL", "claude-sonnet-5-5")), env("VOICE_STYLE") or VOICE_DEFAULT)
 
 if demo:
     x, search, judge = S.build()
     providers = {"x": x, "facebook": MockX([]), "instagram": MockX([])}
     discoverers = [StaticDiscoverer("x", S.POSTS)]
 else:
-    search, judge, library = NullSearch(), NullJudge(), None
+    searches = []
     if env("LIBRARY_DIR"):
         library = DocumentLibrary(env("LIBRARY_DIR"))            # sample/fictional documents are refused here
         for p in library.problems:
             print("LIBRARY PROBLEM:", p)
-        search, judge = LibrarySearch(library), RuleJudge()
+        searches.append(LibrarySearch(library))
+    if env("WEB_EVIDENCE") == "1" and env("BRAVE_API_KEY") and env("EVIDENCE_DOMAINS"):      # live lookups on official sites only
+        domains = parse_domains(env("EVIDENCE_DOMAINS"))
+        searches.append(OfficialWebSearch(brave_search(urllib_get, env("BRAVE_API_KEY")), lambda u: safe_fetch(u, domains), domains,
+                                          daily_search_cap=int(env("SEARCH_DAILY_CAP", "200"))))
+    search = CompositeSearch(searches) if searches else NullSearch()
+    judge = NullJudge()
+    if searches:
+        judge = RuleJudge()
         if env("ANTHROPIC_API_KEY"):
             judge = CompositeJudge([RuleJudge(), LLMJudge(anthropic_complete(urllib_post, env("ANTHROPIC_API_KEY"), env("LLM_MODEL", "claude-sonnet-5-5")))])
     if env("X_BEARER_TOKEN"):
-        xc = XSearchClient(urllib_get, env("X_BEARER_TOKEN"))
+        xc = XSearchClient(urllib_get, env("X_BEARER_TOKEN"), meter)
         providers["x"] = xc
         if env("X_BOT_USER_ID") and env("X_BOT_HANDLE"):
             discoverers.append(XMentionDiscoverer(xc, env("X_BOT_USER_ID"), env("X_BOT_HANDLE")))
@@ -58,7 +73,7 @@ else:
         if env("IG_USER_ID") and env("IG_HASHTAGS"):
             discoverers.append(InstagramHashtagDiscoverer(mc, env("IG_USER_ID"), env("IG_HASHTAGS").split(",")))
 
-orch = Orchestrator(providers, search, RuleBasedExtractor(), judge, reg, audit, cfg)
+orch = Orchestrator(providers, search, RuleBasedExtractor(), judge, reg, audit, cfg, writer=writer, thread_limit=0 if demo else int(env("X_THREAD_MAX", "10")))
 token_mgr = None
 if env("TOKEN_DB") and env("X_CLIENT_ID"):      # auto-refreshing sign-in (run scripts/x_authorize.py once)
     token_mgr = TokenManager(urllib_post_form, env("X_CLIENT_ID"), TokenStore(env("TOKEN_DB")), env("X_CLIENT_SECRET") or None, audit)
@@ -67,7 +82,7 @@ token_src = token_mgr or env("X_USER_ACCESS_TOKEN")
 by_platform = {}
 if env("ENABLE_PUBLISHER") == "1":
     if token_src:
-        by_platform["x"] = XPublisher(urllib_post, token_src)
+        by_platform["x"] = XPublisher(urllib_post, token_src, meter)
     if env("META_ACCESS_TOKEN") and env("META_API_VERSION"):
         by_platform["facebook"] = by_platform["instagram"] = MetaPublisher(urllib_post_form, env("META_ACCESS_TOKEN"), env("META_API_VERSION"))
 if by_platform:
@@ -75,6 +90,8 @@ if by_platform:
 store = StateStore(env("STATE_DB")) if env("STATE_DB") else None      # unset = in-memory (demo, free hosts)
 service = Service(orch, reg, audit, cfg, publisher=publisher, store=store)
 service.library = library
+meter.bind(service)
+service.meter = meter
 service.token_manager = token_mgr
 if env("BOOTSTRAP_ADMIN_PASSWORD") and not service.users:
     admin = service.bootstrap_admin("admin", env("BOOTSTRAP_ADMIN_PASSWORD"))

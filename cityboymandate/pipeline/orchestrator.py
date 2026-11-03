@@ -8,6 +8,7 @@ from cityboymandate.core.rbac import require
 from cityboymandate.core.security import scan_untrusted
 from cityboymandate.lang.detect import LANG_NAMES, detect
 from cityboymandate.pipeline import agents
+from cityboymandate.pipeline.thread import analyse_thread
 
 AGENT = Principal("pipeline", Role.AGENT)
 MAX_CLAIMS, MAX_DOCS_PER_CLAIM = 5, 6
@@ -25,7 +26,8 @@ ALLOWED = {
 
 class Orchestrator:
     def __init__(self, x, search, extractor, judge, registry: EvidenceRegistry,
-                 audit: AuditLog, config: ConfigStore):
+                 audit: AuditLog, config: ConfigStore, writer=None, thread_limit: int = 0):
+        self.writer, self.thread_limit = writer, thread_limit
         self.providers = x if isinstance(x, dict) else {"x": x}
         self.search, self.extractor, self.judge = search, extractor, judge
         self.reg, self.audit, self.config = registry, audit, config
@@ -76,6 +78,17 @@ class Orchestrator:
                 else:
                     limited = True
                     inv.post.limitations.append(f"referenced post {ref} unavailable")
+        conv = getattr(self.providers.get(inv.post.platform), "conversation", None)
+        if self.thread_limit and conv and inv.post.conversation_id:
+            try:
+                have = {t.platform_post_id for t in inv.thread} | {inv.post.platform_post_id}
+                inv.thread += [t for t in conv(inv.post.conversation_id, self.thread_limit + 1) if t.platform_post_id not in have][: self.thread_limit]
+            except Exception as e:
+                inv.notes.append(f"the wider conversation could not be retrieved: {type(e).__name__}")
+        ta = analyse_thread(inv.post, inv.thread)
+        inv.post.limitations += ta.limitations
+        inv.notes += ta.notes
+        limited = limited or bool(ta.limitations)
         inv.safety_flags = scan_untrusted(" ".join([inv.post.text] + [t.text for t in inv.thread]))
         if inv.safety_flags:
             self.audit.record(AGENT.id, "injection_flagged", "investigation", inv.id, {"flags": inv.safety_flags})
@@ -130,7 +143,7 @@ class Orchestrator:
             pairs = [min(pairs, key=lambda cv: agents._ORDER.index(cv[1].verdict.value))]
         for c, v in pairs:
             reply_lang = inv.language if (invoked and inv.language in set(self.config.cfg.reviewed_languages)) else "en"
-            d = agents.edit_draft(inv.id, c, v, self.reg, self.config.cfg.disclosure_text, invoked, reply_lang)
+            d = agents.edit_draft(inv.id, c, v, self.reg, self.config.cfg.disclosure_text, invoked, reply_lang, self.writer)
             if d:
                 inv.drafts.append(d)
         if not inv.drafts:
